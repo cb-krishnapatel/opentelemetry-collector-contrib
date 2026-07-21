@@ -5,8 +5,10 @@ package textencodingextension
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +44,25 @@ func TestTextRoundtripMissingNewline(t *testing.T) {
 	b, err := codec.MarshalLogs(ld)
 	require.NoError(t, err)
 	require.Equal(t, "foo\nbar", string(b))
+}
+
+func TestUnmarshalLogsAcrossMultipleBatches(t *testing.T) {
+	// Regression test: inputs with more than the default 1000-item flush
+	// threshold must not be silently truncated by UnmarshalLogs.
+	enc, err := textutils.LookupEncoding("utf8")
+	require.NoError(t, err)
+	r := regexp.MustCompile(`\r?\n`)
+	codec := &textLogCodec{decoder: enc.NewDecoder(), unmarshalingSeparator: r, marshalingSeparator: "\n"}
+
+	var input strings.Builder
+	const recordCount = 1863
+	for i := 0; i < recordCount; i++ {
+		fmt.Fprintf(&input, "record-%d\n", i)
+	}
+
+	logs, err := codec.UnmarshalLogs([]byte(input.String()))
+	require.NoError(t, err)
+	require.Equal(t, recordCount, logs.LogRecordCount())
 }
 
 func TestNoSeparator(t *testing.T) {
